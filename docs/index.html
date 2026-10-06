@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BCHW to B x (CHW): Flatten Explorer</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--muted:#78716c;--card:#fff;--line:#e7e5e4;--accent:#2563eb;--ok:#16a34a;--cl:86%;--hl:#fde047}
+@media (prefers-color-scheme:dark){:root{--bg:#161412;--fg:#f5f5f4;--muted:#a8a29e;--card:#1f1c1a;--line:#3a3532;--accent:#60a5fa;--ok:#4ade80;--cl:28%;--hl:#a16207}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:26px;margin:0 0 4px}
+h2{font-size:18px;margin:0 0 12px}
+p.sub{color:var(--muted);margin:0 0 22px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.formula{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;font-size:14px;overflow-x:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:12px}
+.stat b{display:block;font-size:22px}
+.stat span{color:var(--muted);font-size:13px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+.ok{color:var(--ok);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:10px}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
+input,select,button{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);width:84px}
+select{width:96px}
+button{width:auto;background:var(--accent);color:#fff;border:0;cursor:pointer;padding:7px 14px}
+button:disabled{opacity:.5;cursor:wait}
+.grids{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}
+.chan{font-size:12px;color:var(--muted)}
+.grid{display:grid;gap:3px;margin-top:3px}
+.cell{border-radius:5px;padding:3px 5px;text-align:center;font-size:11px;line-height:1.25;min-width:42px;
+  background:hsl(var(--hue) 60% var(--cl));border:2px solid transparent;cursor:default}
+.cell small{display:block;opacity:.75;font-size:10px}
+.cell.hl{border-color:var(--fg);background:var(--hl)}
+.flat{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
+.note{color:var(--muted);font-size:13px}
+.err{color:#dc2626}
+svg text{fill:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<main>
+<h1>BCHW &rarr; B&times;(CHW) Flatten Explorer</h1>
+<p class="sub">AI Accelerator Design &middot; Assignment 3 &middot; IIT Tirupati. Flatten and reconstruct a tensor with explicit index arithmetic, no reshape.</p>
+
+<section>
+  <h2>The mapping</h2>
+  <div class="formula mono">flatten: &nbsp;&nbsp;&nbsp;&nbsp;j = c&middot;(H&middot;W) + h&middot;W + w</div>
+  <div class="formula mono">reconstruct: c = &lfloor;j / (H&middot;W)&rfloor; &nbsp; r = j mod (H&middot;W); &nbsp; h = &lfloor;r / W&rfloor;; &nbsp; w = r mod W</div>
+</section>
+
+<section>
+  <h2>Experimental results</h2>
+  <div class="cards" id="stats"></div>
+  <div class="tablewrap" style="margin-top:14px"><table id="results"></table></div>
+  <p class="note" id="resnote"></p>
+  <h2 style="margin-top:18px">Time vs channel count</h2>
+  <div id="chart"></div>
+  <p class="note">Cost grows linearly with B&middot;C&middot;H&middot;W. Reconstruction error is exactly zero in every case.</p>
+</section>
+
+<section>
+  <h2>Mapping explorer</h2>
+  <p class="note">Each element is labelled with its coordinates (c,h,w) and its flat index j. Hover any cell to see where it lands.</p>
+  <div class="row">
+    <label>C<input id="eC" type="number" min="1" max="6" value="2"></label>
+    <label>H<input id="eH" type="number" min="1" max="6" value="2"></label>
+    <label>W<input id="eW" type="number" min="1" max="8" value="3"></label>
+  </div>
+  <div class="grids" id="orig"></div>
+  <div class="chan">Flattened row, B=1 (length C&middot;H&middot;W)</div>
+  <div class="flat" id="flat"></div>
+
+  <div class="row" style="margin-top:16px">
+    <label>c<input id="qc" type="number" min="0" value="1"></label>
+    <label>h<input id="qh" type="number" min="0" value="1"></label>
+    <label>w<input id="qw" type="number" min="0" value="2"></label>
+    <label>j (inverse)<input id="qj" type="number" min="0" value="11"></label>
+  </div>
+  <div class="formula mono" id="fwd"></div>
+  <div class="formula mono" id="inv"></div>
+</section>
+
+<section>
+  <h2>Live round-trip test (runs in your browser)</h2>
+  <p class="note">Generates a random tensor, flattens it, reconstructs it, and measures the error using the same algorithm written in JavaScript.</p>
+  <div class="row">
+    <label>B<input id="tB" type="number" min="1" value="2"></label>
+    <label>C<select id="tC"></select></label>
+    <label>H<input id="tH" type="number" min="1" value="32"></label>
+    <label>W<input id="tW" type="number" min="1" value="32"></label>
+    <button id="run">Run</button>
+  </div>
+  <div class="formula mono" id="out">Press Run.</div>
+</section>
+</main>
+
+<script src="results.js"></script>
+<script>
+// ---------- core algorithms (explicit loops, no reshape/flat/slice tricks) ----------
+function flatIndex(c,h,w,H,W){ return c*(H*W) + h*W + w; }
+function unflatIndex(j,H,W){ const HW=H*W, c=Math.floor(j/HW), r=j%HW; return [c, Math.floor(r/W), r%W]; }
+
+function flattenBCHW(x,B,C,H,W){
+  const out = new Array(B);
+  for(let b=0;b<B;b++){
+    const row = new Float32Array(C*H*W);
+    for(let c=0;c<C;c++) for(let h=0;h<H;h++) for(let w=0;w<W;w++)
+      row[flatIndex(c,h,w,H,W)] = x[b][c][h][w];
+    out[b]=row;
+  }
+  return out;
+}
+function makeTensor(B,C,H,W,fill){
+  const x = new Array(B);
+  for(let b=0;b<B;b++){ x[b]=new Array(C);
+    for(let c=0;c<C;c++){ x[b][c]=new Array(H);
+      for(let h=0;h<H;h++){ x[b][c][h]=new Float32Array(W);
+        if(fill) for(let w=0;w<W;w++) x[b][c][h][w]=fill();
+      }}}
+  return x;
+}
+function reconstructBCHW(flat,B,C,H,W){
+  const out = makeTensor(B,C,H,W,null);
+  for(let b=0;b<B;b++) for(let j=0;j<C*H*W;j++){
+    const [c,h,w]=unflatIndex(j,H,W);
+    out[b][c][h][w]=flat[b][j];
+  }
+  return out;
+}
+function errors(a,b,B,C,H,W){
+  let emax=0,total=0;
+  for(let bb=0;bb<B;bb++) for(let c=0;c<C;c++) for(let h=0;h<H;h++) for(let w=0;w<W;w++){
+    const d=Math.abs(a[bb][c][h][w]-b[bb][c][h][w]); total+=d; if(d>emax) emax=d;
+  }
+  return [emax, total/(B*C*H*W)];
+}
+
+// ---------- results table, stats, chart ----------
+const $ = id => document.getElementById(id);
+function fmt(v){ return (typeof v==='number') ? v.toExponential(1) : v; }
+(function renderResults(){
+  const R = window.RESULTS || [];
+  if(!R.length){ $('resnote').textContent='No results.js found. Run run_experiments.py first.'; return; }
+  const maxE = Math.max(...R.map(r=>r.Emax)), maxM = Math.max(...R.map(r=>r.MAE));
+  const allRef = R.every(r=>r.RefMatch);
+  $('stats').innerHTML = [
+    [R.length,'configurations tested'],
+    [fmt(maxE),'worst-case Emax'],
+    [fmt(maxM),'worst-case MAE'],
+    [allRef?'all match':'MISMATCH','vs reference reshape']
+  ].map(([a,b])=>`<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('');
+  const cols=['Dataset/Input','B','C','H','W','Emax','MAE','RefMatch','Time_s'];
+  let h='<tr>'+cols.map(c=>`<th>${c.replace('_',' (')}${c==='Time_s'?'s)':''}</th>`).join('')+'</tr>';
+  for(const r of R){
+    h+='<tr>'+cols.map(c=>{
+      let v=r[c];
+      if(c==='Emax'||c==='MAE') v=fmt(v);
+      if(c==='RefMatch') return `<td class="${v?'ok':'err'}">${v?'&#10003;':'&#10007;'}</td>`;
+      return `<td>${v}</td>`;
+    }).join('')+'</tr>';
+  }
+  $('results').innerHTML=h;
+  // bar chart: time vs C
+  const W=900,H=220,pad={l:44,r:10,t:10,b:38};
+  const tmax=Math.max(...R.map(r=>r.Time_s))||1;
+  const bw=(W-pad.l-pad.r)/R.length;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Time versus channel count">`;
+  for(let i=0;i<=4;i++){ const y=pad.t+(H-pad.t-pad.b)*(1-i/4);
+    s+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${pad.l-6}" y="${y+4}" text-anchor="end">${(tmax*i/4).toFixed(2)}s</text>`; }
+  R.forEach((r,i)=>{
+    const bh=(H-pad.t-pad.b)*(r.Time_s/tmax), x=pad.l+i*bw+bw*0.18, y=H-pad.b-bh;
+    s+=`<rect x="${x}" y="${y}" width="${bw*0.64}" height="${bh}" rx="3" fill="var(--accent)"><title>${r['Dataset/Input']}: C=${r.C}, ${r.Time_s}s</title></rect>`;
+    s+=`<text x="${x+bw*0.32}" y="${H-pad.b+14}" text-anchor="middle">C=${r.C}</text>`;
+  });
+  $('chart').innerHTML=s+'</svg>';
+})();
+
+// ---------- mapping explorer ----------
+function clampInt(el,lo,hi){ let v=parseInt(el.value,10); if(isNaN(v)) v=lo; v=Math.max(lo,Math.min(hi,v)); return v; }
+function hue(c){ return (c*67)%360; }
+function drawExplorer(){
+  const C=clampInt($('eC'),1,6), H=clampInt($('eH'),1,6), W=clampInt($('eW'),1,8);
+  let g='';
+  for(let c=0;c<C;c++){
+    g+=`<div><div class="chan">channel c=${c}</div><div class="grid" style="grid-template-columns:repeat(${W},auto)">`;
+    for(let h=0;h<H;h++) for(let w=0;w<W;w++){
+      const j=flatIndex(c,h,w,H,W);
+      g+=`<div class="cell" data-j="${j}" style="--hue:${hue(c)}">${c},${h},${w}<small>j=${j}</small></div>`;
+    }
+    g+='</div></div>';
+  }
+  $('orig').innerHTML=g;
+  let f='';
+  for(let j=0;j<C*H*W;j++){ const [c,h,w]=unflatIndex(j,H,W);
+    f+=`<div class="cell" data-j="${j}" style="--hue:${hue(c)}">${j}<small>${c},${h},${w}</small></div>`; }
+  $('flat').innerHTML=f;
+  document.querySelectorAll('.cell').forEach(el=>{
+    el.addEventListener('mouseenter',()=>document.querySelectorAll(`.cell[data-j="${el.dataset.j}"]`).forEach(e=>e.classList.add('hl')));
+    el.addEventListener('mouseleave',()=>document.querySelectorAll('.cell.hl').forEach(e=>e.classList.remove('hl')));
+  });
+  // calculators
+  const c=clampInt($('qc'),0,C-1), h=clampInt($('qh'),0,H-1), w=clampInt($('qw'),0,W-1);
+  const j=flatIndex(c,h,w,H,W);
+  $('fwd').textContent=`(c,h,w)=(${c},${h},${w}) -> j = ${c}*${H*W} + ${h}*${W} + ${w} = ${j}`;
+  const jq=clampInt($('qj'),0,C*H*W-1), [c2,h2,w2]=unflatIndex(jq,H,W);
+  $('inv').textContent=`j=${jq} -> c = ${jq}//${H*W} = ${c2};  r = ${jq}%${H*W} = ${jq%(H*W)};  h = ${jq%(H*W)}//${W} = ${h2};  w = ${jq%(H*W)}%${W} = ${w2}`;
+}
+['eC','eH','eW','qc','qh','qw','qj'].forEach(id=>$(id).addEventListener('input',drawExplorer));
+drawExplorer();
+
+// ---------- live round-trip ----------
+[1,3,8,16,32,64,128,256,500].forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; if(c===16) o.selected=true; $('tC').appendChild(o); });
+$('run').addEventListener('click',()=>{
+  const B=clampInt($('tB'),1,64), C=parseInt($('tC').value,10), H=clampInt($('tH'),1,256), W=clampInt($('tW'),1,256);
+  const n=B*C*H*W;
+  if(n>4e6){ $('out').innerHTML=`<span class="err">${n.toLocaleString()} elements is too large for the browser demo (limit 4,000,000). Reduce B, H or W.</span>`; return; }
+  $('run').disabled=true; $('out').textContent='Running...';
+  setTimeout(()=>{
+    const x=makeTensor(B,C,H,W,Math.random);
+    const t0=performance.now();
+    const flat=flattenBCHW(x,B,C,H,W);
+    const back=reconstructBCHW(flat,B,C,H,W);
+    const [emax,mae]=errors(x,back,B,C,H,W);
+    const dt=((performance.now()-t0)/1000).toFixed(3);
+    $('out').innerHTML=`B=${B}, C=${C}, H=${H}, W=${W}<br>flat shape: ${B} x ${C*H*W}<br>Emax = ${emax}<br>MAE  = ${mae}<br>time = ${dt}s &nbsp; <span class="${emax===0?'ok':'err'}">${emax===0?'&#10003; exact reconstruction':'&#10007; mismatch'}</span>`;
+    $('run').disabled=false;
+  },20);
+});
+</script>
+</body>
+</html>

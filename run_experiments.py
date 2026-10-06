@@ -1,5 +1,7 @@
 """Run all experiments, print the table, save results/results.csv and results.md."""
 import csv
+import json
+import os
 import time
 
 import numpy as np
@@ -59,6 +61,11 @@ def main():
         for r in rows:
             f.write("| " + " | ".join(f"{v:.1e}" if isinstance(v, float) and k in (5, 6) else str(v)
                                       for k, v in enumerate(r)) + " |\n")
+
+    # Data for the web app (loaded by docs/index.html via a <script> tag)
+    os.makedirs("docs", exist_ok=True)
+    with open("docs/results.js", "w") as f:
+        f.write("window.RESULTS = " + json.dumps([dict(zip(cols, r)) for r in rows], indent=2) + ";\n")
 
 
 if __name__ == "__main__":
