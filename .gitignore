@@ -1,0 +1,17 @@
+# Virtual environments
+tensor_env/
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Downloaded datasets (MNIST/CIFAR, can be large)
+data/
+
+# Editor / OS files
+.vscode/
+.DS_Store
